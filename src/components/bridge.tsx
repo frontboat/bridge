@@ -661,7 +661,7 @@ export function BridgeOut() {
                   <div className="alert">
                     <p className="alert-title">Select Resources to Withdraw</p>
                     <p className="alert-description">
-                      Choose which resource types to withdraw. Leave none selected to withdraw all types.
+                      !!! SO IDK WHY, BUT GO THROUGH AND ONLY SELECT 1 RESOURCE, HIT SUBMIT, ITLL GO THRU, GIVE YOU AN ERROR, BUT IT WENT THRU. REPEAT FOR THE RESOURCES !!! SO JANK BUT BRAIN HURT NO TIME 
                     </p>
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px', marginBottom: '12px' }}>
                       <button onClick={selectAllResourceTypes} className="button" style={{ fontSize: '12px', padding: '4px 8px' }}>
