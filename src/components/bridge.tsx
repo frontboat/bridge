@@ -98,7 +98,6 @@ export function BridgeOut() {
   const { startProgress, addStep, updateStep, addSubStep, updateSubStep, completeStep, errorStep, completeProgress, resetProgress } = useProgress()
   const [isLoading, setIsLoading] = useState(false)
   const [isBridging, setIsBridging] = useState(false)
-  const [originalResources, setOriginalResources] = useState<WithdrawableResource[]>([])
   const [resources, setResources] = useState<WithdrawableResource[]>([])
   const [allResourceData, setAllResourceData] = useState<FetchResourcesResult | null>(null)
   const [selectedResourceTypes, setSelectedResourceTypes] = useState<Set<string>>(new Set())
@@ -115,6 +114,7 @@ export function BridgeOut() {
   const [txHashes, setTxHashes] = useState<string[]>([])
   const [error, setError] = useState<Error | null>(null)
   const [failedBatchInfo, setFailedBatchInfo] = useState<{ entityId: string; resourceName: string } | null>(null)
+  const [hasVerified, setHasVerified] = useState(false)
 
   // Use corrected resources if available, otherwise use original resources
   const activeResources = showCorrectedBalances && correctedResources.length > 0 ? correctedResources : resources
@@ -206,6 +206,7 @@ export function BridgeOut() {
 
       const results = await checkDataFreshness(provider, resourcesForVerification, 5)
       setVerificationResults(results)
+      setHasVerified(true)
 
       if (results.seems_stale) {
         console.warn("Data appears to be stale based on contract verification")
@@ -228,9 +229,11 @@ export function BridgeOut() {
         })
         
         setCorrectedResources(correctedWithdrawable)
+        setShowCorrectedBalances(true) // Auto-apply corrected balances
         console.log(`Applied corrections: ${corrected.filter(r => r.was_corrected).length} resources corrected, ${corrected.length} total resources remain`)
       } else {
         setCorrectedResources([])
+        setShowCorrectedBalances(false)
       }
     } catch (err) {
       console.error("Error verifying balances:", err)
@@ -249,13 +252,15 @@ export function BridgeOut() {
 
     setIsLoading(true)
     setResources([])
-    setOriginalResources([])
     setAllResourceData(null)
     setSelectedResourceTypes(new Set())
     setVerificationResults(null)
     setTxHashes([])
     setError(null)
     setFailedBatchInfo(null)
+    setHasVerified(false)
+    setCorrectedResources([])
+    setShowCorrectedBalances(false)
     
     // Start the progress tracking
     resetProgress()
@@ -266,7 +271,6 @@ export function BridgeOut() {
       const resourceData = await fetchAllResourceBalances(walletAddress, progressReporter)
       setAllResourceData(resourceData)
       setResources(resourceData.withdrawable)
-      setOriginalResources(resourceData.withdrawable)
       setLastFetchTime(new Date())
 
       completeProgress()
@@ -280,128 +284,36 @@ export function BridgeOut() {
     }
   }
 
-  const handleBridgeOut = async (callsOverride?: Call[]) => {
-    // If no calls override provided, automatically verify balances first
-    if (!callsOverride) {
-      console.log("🔍 Auto-verifying balances before withdrawal to prevent failures...")
-      
-      setIsBridging(true)
-      setError(null)
-      setVerificationResults(null)
-      
-      try {
-        // Auto-verify balances first
-        await handleVerifyBalances()
-        
-        // Wait a moment for verification to complete
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        // Check if we have corrected resources and auto-apply them
-        if (correctedResources.length > 0) {
-          console.log("✨ Auto-applying corrected balances to prevent failures")
-          setShowCorrectedBalances(true)
-          
-          // Use corrected resources for withdrawal
-          const correctedCalls: Call[] = correctedResources.map((resource) => ({
-            contractAddress: BRIDGE_CONTRACT_ADDRESS,
-            entrypoint: "withdraw",
-            calldata: [
-              parseInt(resource.entity_id, 10),
-              walletAddress!,
-              resource.resource_contract_address,
-              resource.amount,
-              CLIENT_FEE_RECIPIENT,
-            ],
-          }))
-          
-          console.log(`🎯 Proceeding with ${correctedCalls.length} verified resources (${filteredResources.length - correctedCalls.length} filtered out)`)
-          
-          // Proceed with verified calls
-          return handleBridgeOut(correctedCalls)
-        }
-      } catch (error) {
-        console.error("Auto-verification failed:", error)
-        setError(new Error("Pre-verification failed. Please try manual verification."))
-        setIsBridging(false)
-        return
-      }
-    }
-
-    // Rest of the original function...
-    const callsToExecute = callsOverride || calls
-    if (!callsToExecute.length) {
+  const handleBridgeOut = async () => {
+    if (!calls.length) {
       console.warn("No resources staged for withdrawal. Fetch resources first.")
-      setIsBridging(false)
       return
     }
     if (!account) {
       console.error("Wallet not connected or ready.")
-      setIsBridging(false)
       return
     }
 
-    if (!callsOverride) {
-      setIsBridging(true)
-      setTxHashes([])
-      setError(null)
-      setVerificationResults(null) // Clear old verification results
+    // Check if user has verified balances
+    if (!hasVerified && resources.length > 0) {
+      setError(new Error("Please verify balances first to ensure accurate withdrawals. Click 'Verify Balances' above."))
+      return
     }
 
-    // Use smart batching to avoid resource type conflicts
-    // We need to determine the correct resources that match the calls being executed
-    let resourcesForBatching: WithdrawableResource[]
-    
-    if (callsOverride) {
-      // For overridden calls (like retry), we need to figure out which resources match
-      // This is tricky because calls don't contain resource info directly
-      console.log('Using call override, need to match resources to calls')
-      
-      // Extract entity IDs from calls to match with resources
-      const entityIdsInCalls = callsToExecute.map(call => call.calldata[0].toString())
-      const contractAddressesInCalls = callsToExecute.map(call => call.calldata[2])
-      
-      console.log('Entity IDs in calls:', entityIdsInCalls)
-      console.log('Contract addresses in calls:', contractAddressesInCalls)
-      
-      // Try to match resources to calls based on entity ID and contract address
-      resourcesForBatching = []
-      for (let i = 0; i < callsToExecute.length; i++) {
-        const call = callsToExecute[i]
-        const entityId = call.calldata[0].toString()
-        const contractAddress = call.calldata[2]
-        
-        // Find matching resource
-        const matchingResource = (originalResources.length > 0 ? originalResources : filteredResources)
-          .find(r => r.entity_id === entityId && r.resource_contract_address === contractAddress)
-        
-        if (matchingResource) {
-          resourcesForBatching.push(matchingResource)
-        } else {
-          console.warn(`Could not find matching resource for call ${i} (entity ${entityId})`)
-          // Create a dummy resource to maintain array alignment
-          resourcesForBatching.push({
-            entity_id: entityId,
-            resource_name: 'UNKNOWN',
-            resource_contract_address: contractAddress,
-            amount: '0',
-            resource_id: 1 // Default to stone ID
-          })
-        }
-      }
-    } else {
-      // Normal case - use filtered resources
-      resourcesForBatching = filteredResources
-    }
-    
-    console.log(`Resources for batching: ${resourcesForBatching.length}`)
-    console.log(`Calls to execute: ${callsToExecute.length}`)
-    
-    const smartBatches = createSmartBatches(callsToExecute, resourcesForBatching)
+    setIsBridging(true)
+    setTxHashes([])
+    setError(null)
+    setFailedBatchInfo(null)
+
+    // Use smart batching with the filtered resources
+    const smartBatches = createSmartBatches(calls, filteredResources)
     const numBatches = smartBatches.length
     
     console.log(
-      `🧠 Smart batching: ${callsToExecute.length} withdrawals → ${numBatches} batches (avoiding resource conflicts)`,
+      `🧠 Smart batching: ${calls.length} withdrawals → ${numBatches} batches (avoiding resource conflicts)`,
     )
+
+    const allTxHashes: string[] = []
 
     try {
       for (let i = 0; i < smartBatches.length; i++) {
@@ -409,39 +321,60 @@ export function BridgeOut() {
         const batchNum = i + 1
         console.log(`Submitting smart batch ${batchNum} of ${numBatches} (${batch.length} calls)...`)
 
-        const result = await account.execute(batch)
-        setTxHashes((prev) => [...prev, result.transaction_hash])
-        
-        console.log(`Smart batch ${batchNum} submitted successfully.`)
-      }
-      console.log("All withdrawal batches have been submitted.")
-    } catch (e: unknown) {
-      console.error("Withdrawal failed on a batch:", e)
-      
-      // Extract error message from various possible error formats
-      let errorText = ''
-      if (typeof e === 'string') {
-        errorText = e
-      } else if (e && typeof e === 'object') {
-        if ('message' in e && typeof e.message === 'string') {
-          errorText = e.message
-        } else if ('toString' in e && typeof e.toString === 'function') {
-          errorText = e.toString()
-        } else {
-          errorText = JSON.stringify(e)
+        try {
+          const result = await account.execute(batch)
+          allTxHashes.push(result.transaction_hash)
+          
+          console.log(`Smart batch ${batchNum} submitted successfully.`)
+        } catch (batchError: unknown) {
+          console.error(`Batch ${batchNum} failed:`, batchError)
+          
+          // Extract error message from various possible error formats
+          let errorText = ''
+          if (typeof batchError === 'string') {
+            errorText = batchError
+          } else if (batchError && typeof batchError === 'object') {
+            if ('message' in batchError && typeof batchError.message === 'string') {
+              errorText = batchError.message
+            } else if ('toString' in batchError && typeof batchError.toString === 'function') {
+              errorText = batchError.toString()
+            } else {
+              errorText = JSON.stringify(batchError)
+            }
+          }
+          
+          console.log("Extracted error text:", errorText)
+          const insufficientBalanceMatch = errorText.match(/Insufficient Balance: (\w+) \(id: (\d+),/i)
+          
+          if (insufficientBalanceMatch) {
+            const resourceName = insufficientBalanceMatch[1]
+            
+            // Find the specific resource that failed
+            const failedResource = filteredResources.find(r => 
+              r.resource_name.toUpperCase() === resourceName.toUpperCase()
+            )
+            
+            if (failedResource) {
+              setFailedBatchInfo({ entityId: failedResource.entity_id, resourceName: failedResource.resource_name })
+              throw new Error(`Insufficient ${resourceName} for entity ${failedResource.entity_id}. The contract has insufficient balance for this withdrawal.`)
+            }
+          }
+          
+          throw batchError
         }
       }
       
-      console.log("Extracted error text:", errorText)
-      const insufficientBalanceMatch = errorText.match(/Insufficient Balance: (\w+) \(id: (\d+),/i)
+      // All batches completed successfully
+      setTxHashes(allTxHashes)
+      console.log(`All ${numBatches} withdrawal batches have been submitted successfully.`)
       
-      if (insufficientBalanceMatch) {
-        const resourceName = insufficientBalanceMatch[1]
-        const entityId = insufficientBalanceMatch[2]
-        setFailedBatchInfo({ entityId, resourceName })
-        setError(new Error(`Insufficient ${resourceName} for entity ${entityId}. This indicates stale indexer data - the indexer shows a balance but the contract has 0 or insufficient balance. Click retry to exclude this resource and continue.`))
-
-      } else if (e instanceof Error) {
+    } catch (e: unknown) {
+      // Set any successful transactions before the failure
+      if (allTxHashes.length > 0) {
+        setTxHashes(allTxHashes)
+      }
+      
+      if (e instanceof Error) {
         setError(e)
       } else {
         setError(new Error("An unknown error occurred during withdrawal."))
@@ -452,40 +385,30 @@ export function BridgeOut() {
   }
   
   const handleRetryBridgeOut = async () => {
-    if (!failedBatchInfo || !originalResources.length || !walletAddress) return
+    if (!failedBatchInfo || !filteredResources.length || !walletAddress) return
 
-    const filteredResources = originalResources.filter(
+    const retryResources = filteredResources.filter(
       (resource) =>
         !(
           resource.entity_id === failedBatchInfo.entityId &&
-          resource.resource_name.toUpperCase() === failedBatchInfo.resourceName.toUpperCase()
+          resource.resource_name === failedBatchInfo.resourceName
         ),
     )
 
-    if (filteredResources.length === originalResources.length) {
+    if (retryResources.length === filteredResources.length) {
       console.error("Could not find the failing resource to exclude. Please fetch again.")
       return
     }
 
     console.log(`Retrying withdrawal without ${failedBatchInfo.resourceName} for entity ${failedBatchInfo.entityId}.`)
 
-    const newCalls: Call[] = filteredResources.map((resource) => ({
-          contractAddress: BRIDGE_CONTRACT_ADDRESS,
-          entrypoint: "withdraw",
-          calldata: [
-            parseInt(resource.entity_id, 10),
-            walletAddress,
-            resource.resource_contract_address,
-            resource.amount,
-            CLIENT_FEE_RECIPIENT,
-          ],
-        }))
-
-    setResources(filteredResources)
+    // Update the resources to exclude the failed one
+    setResources(retryResources)
     setFailedBatchInfo(null)
     setError(null)
 
-    await handleBridgeOut(newCalls)
+    // Retry with the filtered resources
+    await handleBridgeOut()
   }
 
   return (
@@ -502,34 +425,36 @@ export function BridgeOut() {
           <h2 className="card-title">Bridge Out Resources</h2>
           <p className="card-description">
             Withdraw all available resources from your realms and villages to your
-            wallet. This will stage one or more batched transactions.
+            wallet. Follow the steps below to ensure successful withdrawals.
           </p>
         </div>
         <div className="card-content">
           <div className="flex-col-gap">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <button
-              onClick={handleFetchResources}
-              disabled={isLoading || isBridging}
-              className="button"
-            >
-              {isLoading ? "Fetching..." : "1. Fetch All Resource Balances"}
-            </button>
-            {lastFetchTime && (
-              <div style={{ fontSize: '12px', color: '#666' }}>
-                Last updated: {lastFetchTime.toLocaleTimeString()}
-              </div>
-            )}
-            {resources.length > 0 && (
+          
+          {/* Step 1: Fetch Resources */}
+          <div style={{ 
+            padding: '16px', 
+            border: '1px solid #333', 
+            borderRadius: '8px',
+            backgroundColor: '#1a1a1a'
+          }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#fff' }}>
+              Step 1: Fetch Resources
+            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <button
-                onClick={handleVerifyBalances}
-                disabled={isVerifying || isBridging}
+                onClick={handleFetchResources}
+                disabled={isLoading || isBridging}
                 className="button"
-                style={{ marginLeft: '8px', fontSize: '12px', padding: '6px 12px' }}
               >
-                {isVerifying ? "Verifying..." : "Verify Balances"}
+                {isLoading ? "Fetching..." : "Fetch All Resource Balances"}
               </button>
-            )}
+              {lastFetchTime && (
+                <div style={{ fontSize: '12px', color: '#666' }}>
+                  Last updated: {lastFetchTime.toLocaleTimeString()}
+                </div>
+              )}
+            </div>
           </div>
 
           <ProgressDisplay />
@@ -545,16 +470,30 @@ export function BridgeOut() {
                 </p>
               </div>
 
-              <div className="alert" style={{ backgroundColor: '#2d2a1f', borderColor: '#4a4520', color: '#fbbf24' }}>
-                <p className="alert-title">📊 Data Source & Verification</p>
-                <p className="alert-description">
-                  This data comes from the Eternum indexer, which may lag behind the actual blockchain state by a few minutes. 
-                  <strong> Use "Verify Balances" to check against live contracts</strong> for the most accurate data. 
-                  Our system can automatically detect stale data and correct balances using real contract calls.
+              {/* Step 2: Verify Balances */}
+              <div style={{ 
+                padding: '16px', 
+                border: '1px solid #333', 
+                borderRadius: '8px',
+                backgroundColor: hasVerified ? '#1a2c27' : '#1a1a1a',
+                borderColor: hasVerified ? '#00a854' : '#333'
+              }}>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#fff' }}>
+                  Step 2: Verify Balances {hasVerified && '✅'}
+                </h3>
+                <p style={{ fontSize: '14px', color: '#888', margin: '0 0 12px 0' }}>
+                  Verify balances against live contracts to prevent failed transactions
                 </p>
-                <div style={{ marginTop: '8px', fontSize: '12px', color: '#92847a' }}>
-                  💡 <strong>Pro tip:</strong> Contract verification ensures you only withdraw what's actually available, preventing failed transactions.
-                </div>
+                <button
+                  onClick={handleVerifyBalances}
+                  disabled={isVerifying || isBridging || resources.length === 0}
+                  className="button"
+                  style={{ 
+                    backgroundColor: hasVerified ? '#00a854' : '#0070f3',
+                  }}
+                >
+                  {isVerifying ? "Verifying..." : hasVerified ? "Re-verify Balances" : "Verify Balances"}
+                </button>
               </div>
 
               {verificationResults && (
@@ -572,18 +511,6 @@ export function BridgeOut() {
                       <><br/><strong>✨ Good news:</strong> We've automatically corrected the balances using actual contract data. You can now withdraw the real available amounts!</>
                     )}
                   </p>
-                  {verificationResults.seems_stale && correctedResources.length > 0 && (
-                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '14px' }}>
-                        <input
-                          type="checkbox"
-                          checked={showCorrectedBalances}
-                          onChange={(e) => setShowCorrectedBalances(e.target.checked)}
-                        />
-                        <strong>Use corrected balances from contracts ({correctedResources.length} resources)</strong>
-                      </label>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -646,24 +573,20 @@ export function BridgeOut() {
 
               {resources.length > 0 && (
                 <>
-                  <div className="alert">
-                    <p className="alert-title">🚀 Resources Ready for Withdrawal</p>
-                    <p className="alert-description">
-                      Found {resources.length} withdrawable resource stacks. 
-                      {selectedResourceTypes.size === 0 ? "All resource types will be withdrawn" : `${selectedResourceTypes.size} resource type(s) selected`}.
-                      <br/>
-                      <strong>🧠 Smart batching</strong>: Will group these into{" "}
-                      {createSmartBatches(calls, filteredResources).length} optimized
-                      transactions (preventing same-resource conflicts that cause failures).
+                  {/* Step 3: Select Resources */}
+                  <div style={{ 
+                    padding: '16px', 
+                    border: '1px solid #333', 
+                    borderRadius: '8px',
+                    backgroundColor: '#1a1a1a'
+                  }}>
+                    <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#fff' }}>
+                      Step 3: Select Resources to Withdraw
+                    </h3>
+                    <p style={{ fontSize: '14px', color: '#888', margin: '0 0 12px 0' }}>
+                      Choose which resource types to withdraw. Leave empty to withdraw all.
                     </p>
-                  </div>
-
-                  <div className="alert">
-                    <p className="alert-title">Select Resources to Withdraw</p>
-                    <p className="alert-description">
-                      !!! SO IDK WHY, BUT GO THROUGH AND ONLY SELECT 1 RESOURCE, HIT SUBMIT, ITLL GO THRU, GIVE YOU AN ERROR, BUT IT WENT THRU. REPEAT FOR THE RESOURCES !!! SO JANK BUT BRAIN HURT NO TIME 
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                       <button onClick={selectAllResourceTypes} className="button" style={{ fontSize: '12px', padding: '4px 8px' }}>
                         Select All
                       </button>
@@ -674,7 +597,7 @@ export function BridgeOut() {
                     <div className="resource-selection">
                       {getUniqueResourceTypes().map((resourceType) => {
                         const isSelected = selectedResourceTypes.has(resourceType)
-                        const resourceCount = resources.filter(r => r.resource_name === resourceType).length
+                        const resourceCount = activeResources.filter(r => r.resource_name === resourceType).length
                         return (
                           <label key={resourceType} className={`resource-checkbox ${isSelected ? 'selected' : ''}`}>
                             <input
@@ -691,13 +614,47 @@ export function BridgeOut() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => handleBridgeOut()}
-                    disabled={!calls.length || isBridging}
-                    className="button"
-                  >
-                    {isBridging && !failedBatchInfo ? "Auto-Verifying & Smart Bridging..." : `2. Auto-Verify & Smart Bridge Out ${selectedResourceTypes.size === 0 ? 'All' : 'Selected'} Resources (${filteredResources.length} items)`}
-                  </button>
+                  <div className="alert">
+                    <p className="alert-title">🚀 Ready to Bridge</p>
+                    <p className="alert-description">
+                      {showCorrectedBalances ? 
+                        `Using verified contract balances. ${filteredResources.length} resources ready for withdrawal.` :
+                        `${filteredResources.length} resources selected for withdrawal.`
+                      }
+                      <br/>
+                      <strong>🧠 Smart batching</strong>: Will group these into{" "}
+                      {createSmartBatches(calls, filteredResources).length} optimized
+                      transactions to prevent conflicts.
+                    </p>
+                  </div>
+
+                  {/* Step 4: Bridge Out */}
+                  <div style={{ 
+                    padding: '16px', 
+                    border: '1px solid #333', 
+                    borderRadius: '8px',
+                    backgroundColor: '#1a1a1a'
+                  }}>
+                    <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#fff' }}>
+                      Step 4: Bridge Out Resources
+                    </h3>
+                    <button
+                      onClick={() => handleBridgeOut()}
+                      disabled={!calls.length || isBridging || !hasVerified}
+                      className="button"
+                      style={{
+                        backgroundColor: !hasVerified ? '#666' : '#0070f3',
+                        cursor: !hasVerified ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {isBridging ? "Bridging..." : `Bridge Out ${selectedResourceTypes.size === 0 ? 'All' : 'Selected'} Resources (${filteredResources.length} items)`}
+                    </button>
+                    {!hasVerified && resources.length > 0 && (
+                      <p style={{ fontSize: '12px', color: '#ff6666', marginTop: '8px' }}>
+                        ⚠️ Please verify balances first (Step 2) to ensure successful withdrawals
+                      </p>
+                    )}
+                  </div>
                 </>
               )}
             </>
@@ -705,7 +662,7 @@ export function BridgeOut() {
 
           {txHashes.length > 0 && (
             <div className="alert-success">
-              <p className="alert-title">Transactions Submitted!</p>
+              <p className="alert-title">✅ Transactions Submitted!</p>
               <div>
                 {txHashes.map((hash, index) => (
                   <div key={hash}>
@@ -727,7 +684,7 @@ export function BridgeOut() {
                 <div className="alert-destructive">
                   <p className="alert-title">🚨 Transaction Failed: Insufficient {failedBatchInfo.resourceName}</p>
                   <p>The withdrawal failed because entity {failedBatchInfo.entityId} has an insufficient balance of {failedBatchInfo.resourceName}.</p>
-                  <p><strong>This confirms the indexer data is stale.</strong> You can retry without this specific withdrawal.</p>
+                  <p><strong>This resource has been excluded.</strong> You can retry without it.</p>
                   <div style={{ marginTop: '1rem' }}>
                     <button onClick={handleRetryBridgeOut} disabled={isBridging} className="button" style={{ backgroundColor: '#f59e0b', color: 'white' }}>
                       {isBridging ? "Retrying..." : `🔄 Retry Without ${failedBatchInfo.resourceName} (Entity ${failedBatchInfo.entityId})`}
@@ -736,16 +693,10 @@ export function BridgeOut() {
                 </div>
             )}
 
-          {error && !failedBatchInfo && txHashes.length === 0 && (
+          {error && !failedBatchInfo && (
                 <div className="alert-destructive">
-                  <p className="alert-title">🚨 Transaction Failed</p>
+                  <p className="alert-title">🚨 Error</p>
                   <p>{error.message}</p>
-                  <p><strong>Try refreshing the data and selecting only specific resources to withdraw.</strong></p>
-                  <div style={{ marginTop: '1rem' }}>
-                    <button onClick={handleFetchResources} disabled={isLoading} className="button" style={{ backgroundColor: '#3b82f6', color: 'white' }}>
-                      {isLoading ? "Refreshing..." : "🔄 Refresh Data"}
-                    </button>
-                  </div>
                 </div>
             )}
 
