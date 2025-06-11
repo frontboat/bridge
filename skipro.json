@@ -1,0 +1,272 @@
+[
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000004c8478700",
+        "entity_id": 63920,
+        "resource_contract_address": "0x00ce635e3f241b0ae78c46a929d84a9101910188f9c4024eaa7559556503c31a",
+        "resource_name": "COAL"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000005e281e4c00",
+        "entity_id": 63920,
+        "resource_contract_address": "0x0555d713e59d4ff96b7960447e9bc9e79bfdeab5b0eea74e3df81bce61cfbc77",
+        "resource_name": "COLD_IRON"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000091a8aa7000",
+        "entity_id": 63920,
+        "resource_contract_address": "0x066ed5c928ee027a9419ace1cbea8389885161db5572a7c5c4fef2310e9bf494",
+        "resource_name": "COPPER"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000045d36ed700",
+        "entity_id": 63920,
+        "resource_contract_address": "0x00e03ea8ae385f64754820af5c01c36abf1b8130dd6797d3fd9d430e4114e876",
+        "resource_name": "DIAMONDS"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000ded1a52200",
+        "entity_id": 63920,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000713c58b17000",
+        "entity_id": 63920,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000003368b4a00",
+        "entity_id": 63920,
+        "resource_contract_address": "0x000dff9dca192609c4e86ab3be22c7ec1e968876c992d21986f3c542be97fa2f",
+        "resource_name": "GOLD"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000001c4fecc00",
+        "entity_id": 63920,
+        "resource_contract_address": "0x05620aa7170cd66dbcbc37d03087bfe4633ffef91d3e4d97b501de906004f79b",
+        "resource_name": "HARTWOOD"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000ccf5f80300",
+        "entity_id": 63920,
+        "resource_contract_address": "0x01720cf6318bff45e62acc588680ae3cd4d5f8465b1d52cb710533c9299b031a",
+        "resource_name": "IRONWOOD"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000010815824e9",
+        "entity_id": 63920,
+        "resource_contract_address": "0x0124aeb495b947201f5fac96fd1138e326ad86195b98df6dec9009158a533b49",
+        "resource_name": "LORDS"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000102dc71ae00",
+        "entity_id": 63920,
+        "resource_contract_address": "0x03b6448d09dcd023507376402686261f5d6739455fa02f804907b066e488da66",
+        "resource_name": "OBSIDIAN"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000000035a4e900",
+        "entity_id": 63920,
+        "resource_contract_address": "0x03bc86299bee061c7c8d7546ccb62b9daf9bffc653b1508facb722c6593874bc",
+        "resource_name": "PALADIN_T1"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000e36dd12800",
+        "entity_id": 63920,
+        "resource_contract_address": "0x06fe21d2d4a8a05bdb70f09c9250af9870020d5dcc35f410b4a39d6605c3e353",
+        "resource_name": "SILVER"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000013450787a00",
+        "entity_id": 63920,
+        "resource_contract_address": "0x0439a1c010e3e1bb2d43d43411000893c0042bd88f6c701611a0ea914d426da4",
+        "resource_name": "STONE"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000002d3f3b1894ba00",
+        "entity_id": 63920,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000bac7f6b0300",
+        "entity_id": 63920,
+        "resource_contract_address": "0x040d8907cec0f7ae9c364dfb12485a1314d84c129bf1898d2f3d4b7fcc7d44f4",
+        "resource_name": "WOOD"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000021fe473400",
+        "entity_id": 63984,
+        "resource_contract_address": "0x00ce635e3f241b0ae78c46a929d84a9101910188f9c4024eaa7559556503c31a",
+        "resource_name": "COAL"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000006cbb5e7e00",
+        "entity_id": 63984,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000052220ff3c6800",
+        "entity_id": 63984,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000004915043568f00",
+        "entity_id": 63984,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000efd0c8bc00",
+        "entity_id": 63986,
+        "resource_contract_address": "0x0555d713e59d4ff96b7960447e9bc9e79bfdeab5b0eea74e3df81bce61cfbc77",
+        "resource_name": "COLD_IRON"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000ac4b6fe800",
+        "entity_id": 63986,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000002a4642651c800",
+        "entity_id": 63986,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000004010f68ba00",
+        "entity_id": 63986,
+        "resource_contract_address": "0x000dff9dca192609c4e86ab3be22c7ec1e968876c992d21986f3c542be97fa2f",
+        "resource_name": "GOLD"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000a31f039e00",
+        "entity_id": 63986,
+        "resource_contract_address": "0x01720cf6318bff45e62acc588680ae3cd4d5f8465b1d52cb710533c9299b031a",
+        "resource_name": "IRONWOOD"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000005e5fabf71200",
+        "entity_id": 63986,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000009ca60148000",
+        "entity_id": 63988,
+        "resource_contract_address": "0x00ce635e3f241b0ae78c46a929d84a9101910188f9c4024eaa7559556503c31a",
+        "resource_name": "COAL"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000001ca35f0e00",
+        "entity_id": 63988,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000163c95924dcb80",
+        "entity_id": 63988,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000481eab7091a00",
+        "entity_id": 63988,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000022ecb25c00",
+        "entity_id": 63990,
+        "resource_contract_address": "0x0555d713e59d4ff96b7960447e9bc9e79bfdeab5b0eea74e3df81bce61cfbc77",
+        "resource_name": "COLD_IRON"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000001048998f600",
+        "entity_id": 63990,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000046fc6e8654000",
+        "entity_id": 63990,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000045eba5b9100",
+        "entity_id": 63990,
+        "resource_contract_address": "0x000dff9dca192609c4e86ab3be22c7ec1e968876c992d21986f3c542be97fa2f",
+        "resource_name": "GOLD"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000021705836300",
+        "entity_id": 63990,
+        "resource_contract_address": "0x01720cf6318bff45e62acc588680ae3cd4d5f8465b1d52cb710533c9299b031a",
+        "resource_name": "IRONWOOD"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000174876e800",
+        "entity_id": 63990,
+        "resource_contract_address": "0x03b6448d09dcd023507376402686261f5d6739455fa02f804907b066e488da66",
+        "resource_name": "OBSIDIAN"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000005f76c70875800",
+        "entity_id": 63990,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000000127764b5200",
+        "entity_id": 64064,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000b704fec1f0380",
+        "entity_id": 64064,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000001ebf61d229b00",
+        "entity_id": 64064,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    },
+    {
+        "amount": "0x0000000000000000000000000000000000000000000000000000010931b0be00",
+        "entity_id": 64069,
+        "resource_contract_address": "0x0264be95a4a2ace20add68cb321acdccd2f9f8440ee1c7abd85da44ddab01085",
+        "resource_name": "DONKEY"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000713d16aed3e00",
+        "entity_id": 64069,
+        "resource_contract_address": "0x027719173cfe10f1aa38d2aaed0a075b6077290f1e817aa3485d2b828394f4d9",
+        "resource_name": "FISH"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000ae9f7bcc00",
+        "entity_id": 64069,
+        "resource_contract_address": "0x01720cf6318bff45e62acc588680ae3cd4d5f8465b1d52cb710533c9299b031a",
+        "resource_name": "IRONWOOD"
+    },
+    {
+        "amount": "0x000000000000000000000000000000000000000000000000000000174876e800",
+        "entity_id": 64069,
+        "resource_contract_address": "0x03bc86299bee061c7c8d7546ccb62b9daf9bffc653b1508facb722c6593874bc",
+        "resource_name": "PALADIN_T1"
+    },
+    {
+        "amount": "0x00000000000000000000000000000000000000000000000000046ff579531000",
+        "entity_id": 64069,
+        "resource_contract_address": "0x057a3f1ee475e072ce3be41785c0e889b7295d7a0dcc22b992c5b9408dbeb280",
+        "resource_name": "WHEAT"
+    }
+]
