@@ -1,5 +1,8 @@
-import { RpcProvider, Contract } from "starknet";
 import { ResourcesIds } from "@frontboat/types";
+import { buildApiUrl, fetchWithErrorHandling } from "./utils";
+import { populateResourceContracts } from "./contract-verifier";
+
+const API_BASE_URL = "https://api.cartridge.gg/x/eternum-game-mainnet-37/torii/sql";
 
 export interface WithdrawableResource {
   entity_id: string; // realm_id
@@ -47,30 +50,165 @@ export interface ProgressReporter {
   errorStep: (stepId: string, error: string) => void;
 }
 
-export async function queryEternumAPI<T = unknown>(query: string): Promise<T> {
-  try {
-    const response = await fetch("https://api.cartridge.gg/x/eternum-game-mainnet-37/torii/sql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain",
-      },
-      body: query,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("API Error Response:", errorText);
-      throw new Error(`API request failed with status ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    return data || [];
-  } catch (error) {
-    console.error("Error querying Eternum API:", error);
-    throw error;
+function formatAmount(amountHex: string): string {
+  const amount = BigInt(amountHex);
+  if (amount === 0n) {
+    return '0';
   }
+
+  // Resource balances use 9 decimals of precision (1e9), same as resource-checker
+  const divisor = 1_000_000_000n; // 1e9
+  const wholeAmount = amount / divisor;
+  const remainder = amount % divisor;
+
+  if (remainder === 0n) {
+    return wholeAmount.toString();
+  }
+  
+  const decimalPart = remainder.toString().padStart(9, '0');
+  const trimmedDecimalPart = decimalPart.replace(/0+$/, '');
+
+  // Handle cases where the trimmed part is empty (e.g., "1.000" becomes "1")
+  if (trimmedDecimalPart.length === 0) {
+    return wholeAmount.toString();
+  }
+
+  return `${wholeAmount}.${trimmedDecimalPart}`;
 }
 
+export async function fetchAllResourceBalances(
+  ownerAddress: string, 
+  progressReporter?: ProgressReporter
+): Promise<FetchResourcesResult> {
+  progressReporter?.startStep('fetch-start', 'Starting Resource Fetch', `Fetching resources for owner: ${ownerAddress}`);
+
+  // 1. Get user's structures (realms, villages) from indexer
+  progressReporter?.startStep('fetch-structures', 'Querying User Structures', 'Getting realms and villages from indexer');
+  
+  const structuresQuery = `SELECT entity_id FROM "s1_eternum-Structure" WHERE owner = '${ownerAddress}' AND "base.category" IN (1, 5)`;
+  const structuresUrl = buildApiUrl(API_BASE_URL, structuresQuery);
+  const structureResults = await fetchWithErrorHandling<{ entity_id: string }>(structuresUrl, 'Failed to fetch user structures');
+  
+  if (!structureResults || structureResults.length === 0) {
+    progressReporter?.errorStep('fetch-structures', 'No structures found for this address');
+    return { 
+      withdrawable: [], 
+      all_balances: [], 
+      summary: { total_entities: 0, total_resources_checked: 0, withdrawable_count: 0, whitelisted_count: 0 } 
+    };
+  }
+  
+  const entityIds = structureResults.map(s => s.entity_id);
+  progressReporter?.completeStep('fetch-structures', `Found ${structureResults.length} structures: ${entityIds.join(', ')}`);
+
+  // 2. Get all whitelisted resources from indexer (still need this for contract addresses)
+  progressReporter?.startStep('fetch-whitelist', 'Querying Whitelisted Resources', 'Getting resource whitelist configuration');
+  const whitelistQuery = `SELECT resource_type, token FROM "s1_eternum-ResourceBridgeWhitelistConfig"`;
+  const whitelistUrl = buildApiUrl(API_BASE_URL, whitelistQuery);
+  const whitelistResults = await fetchWithErrorHandling<{ resource_type: number; token: string }>(whitelistUrl, 'Failed to fetch whitelist');
+  progressReporter?.completeStep('fetch-whitelist', `Found ${whitelistResults?.length || 0} whitelisted resources`);
+
+  // Populate resource contracts for verification
+  const resourceInfoMapping = Object.fromEntries(
+    Object.entries(resourceIdToInfo).map(([key, value]) => [parseInt(key, 10), { name: value.name }])
+  );
+  populateResourceContracts(whitelistResults, resourceInfoMapping);
+
+  const resourceTypeToTokenMap = new Map<number, string>();
+  for (const resource of whitelistResults) {
+    if (resource.token) {
+      resourceTypeToTokenMap.set(resource.resource_type, resource.token);
+    }
+  }
+
+  const resourceNameMap = new Map<string, { id: ResourcesIds; number: number }>();
+  for (const [key, value] of Object.entries(resourceIdToInfo)) {
+    resourceNameMap.set(value.name, { id: value.id, number: parseInt(key, 10) });
+  }
+
+  progressReporter?.startStep('fetch-balances', 'Querying All Resource Balances', 'Building and executing a unified query for all resources');
+  
+  const allBalances: ResourceBalance[] = [];
+  const withdrawableResources: WithdrawableResource[] = [];
+  
+  try {
+    if (entityIds.length === 0) {
+      throw new Error("No entity IDs found to query for balances.");
+    }
+    
+    const selectStatements = Object.values(resourceIdToInfo).map(resource => {
+      const balanceColumn = `"${resource.name}_BALANCE"`;
+      return `SELECT entity_id, '${resource.name}' AS resource_type, ${balanceColumn} AS balance FROM "s1_eternum-Resource" WHERE entity_id IN (${entityIds.join(',')}) AND ${balanceColumn} IS NOT NULL AND ${balanceColumn} > 0`;
+    });
+
+    const balanceQuery = selectStatements.join('\nUNION ALL\n');
+    const balanceUrl = buildApiUrl(API_BASE_URL, balanceQuery);
+
+    type BalanceResult = { entity_id: string; resource_type: string; balance: string; };
+    const balanceResults = await fetchWithErrorHandling<BalanceResult>(balanceUrl, 'Failed to fetch resource balances');
+
+    progressReporter?.updateStep('fetch-balances', `Processing ${balanceResults.length} balance entries found`);
+
+    for (const balanceResult of balanceResults) {
+      const resourceInfo = resourceNameMap.get(balanceResult.resource_type);
+      if (!resourceInfo) {
+        continue;
+      }
+
+      const tokenAddress = resourceTypeToTokenMap.get(resourceInfo.number);
+      if (!tokenAddress) {
+        continue; // Not a whitelisted resource for bridging
+      }
+
+      const balanceBigInt = BigInt(balanceResult.balance);
+      const isWithdrawable = balanceBigInt > 0n;
+
+      const balance: ResourceBalance = {
+        entity_id: balanceResult.entity_id,
+        resource_contract_address: tokenAddress,
+        resource_name: balanceResult.resource_type,
+        resource_id: resourceInfo.id,
+        amount: balanceResult.balance,
+        amount_formatted: formatAmount(balanceResult.balance),
+        is_withdrawable: isWithdrawable,
+        is_whitelisted: true,
+      };
+      allBalances.push(balance);
+
+      if (isWithdrawable) {
+        withdrawableResources.push({
+          entity_id: balance.entity_id,
+          resource_contract_address: balance.resource_contract_address,
+          amount: balance.amount,
+          resource_name: balance.resource_name,
+          resource_id: balance.resource_id,
+        });
+      }
+    }
+    progressReporter?.completeStep('fetch-balances', `Found ${withdrawableResources.length} types of withdrawable resources across all entities.`);
+
+  } catch(error) {
+    progressReporter?.errorStep('fetch-balances', `Error during balance fetch: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+
+  return {
+    withdrawable: withdrawableResources,
+    all_balances: allBalances,
+    summary: {
+      total_entities: entityIds.length,
+      total_resources_checked: allBalances.length,
+      withdrawable_count: withdrawableResources.length,
+      whitelisted_count: whitelistResults.length
+    }
+  };
+}
+
+export async function fetchWithdrawableResources(ownerAddress: string, progressReporter?: ProgressReporter): Promise<WithdrawableResource[]> {
+  const result = await fetchAllResourceBalances(ownerAddress, progressReporter);
+  return result.withdrawable;
+}
+
+// TODO: This should be defined in a more central place, maybe alongside the enums
 const resourceIdToInfo: { [key: number]: { name: string; id: ResourcesIds } } = {
   1: { name: "STONE", id: ResourcesIds.Stone },
   2: { name: "COAL", id: ResourcesIds.Coal }, 
@@ -94,6 +232,7 @@ const resourceIdToInfo: { [key: number]: { name: string; id: ResourcesIds } } = 
   20: { name: "SAPPHIRE", id: ResourcesIds.Sapphire },
   21: { name: "ETHEREAL_SILICA", id: ResourcesIds.EtherealSilica },
   22: { name: "DRAGONHIDE", id: ResourcesIds.Dragonhide },
+  23: { name: "LABOR", id: ResourcesIds.Labor },
   24: { name: "EARTHEN_SHARD", id: ResourcesIds.AncientFragment }, // Using AncientFragment for EARTHEN_SHARD
   25: { name: "DONKEY", id: ResourcesIds.Donkey },
   26: { name: "KNIGHT_T1", id: ResourcesIds.Knight },
@@ -109,195 +248,3 @@ const resourceIdToInfo: { [key: number]: { name: string; id: ResourcesIds } } = 
   36: { name: "FISH", id: ResourcesIds.Fish },
   37: { name: "LORDS", id: ResourcesIds.Lords }
 };
-
-function formatAmount(amountHex: string): string {
-  const amount = BigInt(amountHex);
-  // Most resources have 18 decimals, but we'll show as whole numbers for simplicity
-  const divisor = 10n ** 18n;
-  const wholeAmount = amount / divisor;
-  const remainder = amount % divisor;
-  
-  if (remainder === 0n) {
-    return wholeAmount.toString();
-  } else {
-    // Show with up to 6 decimal places, removing trailing zeros
-    const decimal = remainder.toString().padStart(18, '0').slice(0, 6);
-    return `${wholeAmount}.${decimal}`.replace(/\.?0+$/, '');
-  }
-}
-
-export async function fetchAllResourceBalances(
-  ownerAddress: string, 
-  progressReporter?: ProgressReporter
-): Promise<FetchResourcesResult> {
-  progressReporter?.startStep('fetch-start', 'Starting Resource Fetch', `Fetching resources for owner: ${ownerAddress}`);
-  const provider = new RpcProvider({ nodeUrl: 'https://api.cartridge.gg/x/starknet/mainnet' });
-
-  // 1. Get user's structures (realms, villages) from indexer
-  progressReporter?.startStep('fetch-structures', 'Querying User Structures', 'Getting realms and villages from indexer');
-  const structuresQuery = `SELECT entity_id FROM "s1_eternum-Structure" WHERE owner = '${ownerAddress}' AND "base.category" IN (1, 5)`;
-  const structureResults = await queryEternumAPI<{ entity_id: string }[]>(structuresQuery);
-  
-  if (!structureResults || structureResults.length === 0) {
-    progressReporter?.errorStep('fetch-structures', 'No structures found for this address');
-    return { 
-      withdrawable: [], 
-      all_balances: [], 
-      summary: { total_entities: 0, total_resources_checked: 0, withdrawable_count: 0, whitelisted_count: 0 } 
-    };
-  }
-  
-  const entityIds = structureResults.map(s => s.entity_id);
-  progressReporter?.completeStep('fetch-structures', `Found ${structureResults.length} structures: ${entityIds.join(', ')}`);
-
-  // 2. Get all whitelisted resources from indexer
-  progressReporter?.startStep('fetch-whitelist', 'Querying Whitelisted Resources', 'Getting resource whitelist configuration');
-  const whitelistQuery = `SELECT resource_type, token FROM "s1_eternum-ResourceBridgeWhitelistConfig"`;
-  const whitelistResults = await queryEternumAPI<{ resource_type: number; token: string }[]>(whitelistQuery);
-  progressReporter?.completeStep('fetch-whitelist', `Found ${whitelistResults?.length || 0} whitelisted resources`);
-
-  progressReporter?.startStep('build-calls', 'Building Balance Check Reference', 'Creating balance check calls for all entity-resource combinations');
-  const callReference: Array<{
-    entity_id: string;
-    resource_contract_address: string;
-    resource_name: string;
-    resource_id: ResourcesIds;
-  }> = [];
-
-  for (const entityId of entityIds) {
-    for (const resource of whitelistResults) {
-      if (!resource.token || !resourceIdToInfo[resource.resource_type]) continue;
-
-      callReference.push({
-        entity_id: entityId,
-        resource_contract_address: resource.token,
-        resource_name: resourceIdToInfo[resource.resource_type].name,
-        resource_id: resourceIdToInfo[resource.resource_type].id
-      });
-    }
-  }
-
-  if (callReference.length === 0) {
-    progressReporter?.errorStep('build-calls', 'No balance checks could be created');
-    return { 
-      withdrawable: [], 
-      all_balances: [], 
-      summary: { total_entities: entityIds.length, total_resources_checked: 0, withdrawable_count: 0, whitelisted_count: whitelistResults.length } 
-    };
-  }
-
-  progressReporter?.completeStep('build-calls', `Created ${callReference.length} balance checks (${whitelistResults.length} resources × ${entityIds.length} entities)`);
-
-  progressReporter?.startStep('check-balances', 'Checking Resource Balances', 'Making individual balance calls to smart contracts');
-  const allBalances: ResourceBalance[] = [];
-  const withdrawableResources: WithdrawableResource[] = [];
-  
-  try {
-    const testCalls = callReference; // Use all calls instead of sampling
-    
-    // Add substeps for progress tracking
-    for (let i = 0; i < testCalls.length; i++) {
-      const ref = testCalls[i];
-      const subStepId = `balance-${i}`;
-      progressReporter?.addSubStep('check-balances', subStepId, `${ref.resource_name} on entity ${ref.entity_id}`);
-      progressReporter?.updateSubStep('check-balances', subStepId, { 
-        status: 'in-progress', 
-        current: i + 1, 
-        total: testCalls.length 
-      });
-      
-      try {
-        // Create contract instance for this token
-        const tokenContract = new Contract(
-          [{ "name": "balanceOf", "type": "function", "inputs": [{"name": "account", "type": "felt"}], "outputs": [{"type": "Uint256"}], "state_mutability": "view" }],
-          ref.resource_contract_address,
-          provider
-        );
-        
-        const balance = await tokenContract.balanceOf(ref.entity_id);
-        
-        // Handle different balance formats
-        let balanceBigInt: bigint;
-        if (typeof balance === 'bigint') {
-          balanceBigInt = balance;
-        } else if (balance && typeof balance === 'object' && 'low' in balance) {
-          const low = balance.low ? BigInt(balance.low) : 0n;
-          const high = balance.high ? BigInt(balance.high) : 0n;
-          balanceBigInt = low + (high << 128n);
-        } else {
-          balanceBigInt = BigInt(balance || 0);
-        }
-        
-        const amountHex = '0x' + balanceBigInt.toString(16);
-        const isWithdrawable = balanceBigInt > 0n;
-        
-        allBalances.push({
-          entity_id: ref.entity_id,
-          resource_contract_address: ref.resource_contract_address,
-          resource_name: ref.resource_name,
-          resource_id: ref.resource_id,
-          amount: amountHex,
-          amount_formatted: formatAmount(amountHex),
-          is_withdrawable: isWithdrawable,
-          is_whitelisted: true
-        });
-        
-        if (isWithdrawable) {
-          progressReporter?.updateSubStep('check-balances', subStepId, { 
-            status: 'completed', 
-            detail: `Found balance: ${formatAmount(amountHex)}` 
-          });
-          withdrawableResources.push({
-            entity_id: ref.entity_id,
-            resource_contract_address: ref.resource_contract_address,
-            resource_name: ref.resource_name,
-            resource_id: ref.resource_id,
-            amount: amountHex,
-          });
-        } else {
-          progressReporter?.updateSubStep('check-balances', subStepId, { 
-            status: 'completed', 
-            detail: 'Zero balance' 
-          });
-        }
-      } catch (callError) {
-        progressReporter?.updateSubStep('check-balances', subStepId, { 
-          status: 'error', 
-          detail: `Error: ${callError instanceof Error ? callError.message : 'Unknown error'}` 
-        });
-        // Still add to allBalances with 0 amount
-        allBalances.push({
-          entity_id: ref.entity_id,
-          resource_contract_address: ref.resource_contract_address,
-          resource_name: ref.resource_name,
-          resource_id: ref.resource_id,
-          amount: '0x0',
-          amount_formatted: '0',
-          is_withdrawable: false,
-          is_whitelisted: true
-        });
-      }
-    }
-    
-    progressReporter?.completeStep('check-balances', `Found ${withdrawableResources.length} withdrawable resources out of ${allBalances.length} checked`);
-    
-  } catch(error) {
-    progressReporter?.errorStep('check-balances', `Error during balance fetch: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
-
-  return {
-    withdrawable: withdrawableResources,
-    all_balances: allBalances,
-    summary: {
-      total_entities: entityIds.length,
-      total_resources_checked: allBalances.length,
-      withdrawable_count: withdrawableResources.length,
-      whitelisted_count: whitelistResults.length
-    }
-  };
-}
-
-export async function fetchWithdrawableResources(ownerAddress: string, progressReporter?: ProgressReporter): Promise<WithdrawableResource[]> {
-  const result = await fetchAllResourceBalances(ownerAddress, progressReporter);
-  return result.withdrawable;
-}

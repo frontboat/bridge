@@ -99,4 +99,98 @@
 
 .underline {
     text-decoration: underline;
+}
+
+/* Table styling for dark theme */
+.resource-table {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 8px;
+  margin: 16px 0;
+  background-color: #2a2a2a;
+}
+
+.resource-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  color: #fff;
+}
+
+.resource-table thead tr {
+  background: #333;
+}
+
+.resource-table th {
+  padding: 8px 4px;
+  text-align: left;
+  border: 1px solid #555;
+  background-color: #333;
+  color: #fff;
+  font-weight: bold;
+}
+
+.resource-table td {
+  padding: 6px 4px;
+  border: 1px solid #555;
+  color: #fff;
+}
+
+.resource-table .withdrawable-row {
+  background-color: #1a3d1a;
+}
+
+.resource-table .non-withdrawable-row {
+  background-color: #2a2a2a;
+}
+
+.resource-table .status-positive {
+  color: #4ade80;
+  font-weight: bold;
+}
+
+.resource-table .status-neutral {
+  color: #888;
+}
+
+.resource-table .status-negative {
+  color: #f87171;
+  font-weight: bold;
+}
+
+/* Resource type selection styling */
+.resource-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.resource-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background-color: #2a2a2a;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.resource-checkbox:hover {
+  background-color: #3a3a3a;
+}
+
+.resource-checkbox.selected {
+  background-color: #0070f3;
+  border-color: #0070f3;
+}
+
+.resource-checkbox input[type="checkbox"] {
+  margin: 0;
 } 
