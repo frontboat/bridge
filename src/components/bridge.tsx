@@ -36,17 +36,29 @@ export function BridgeOut() {
   )
 
   const calls: Call[] = walletAddress
-    ? filteredResources.map((resource) => ({
-        contractAddress: BRIDGE_CONTRACT_ADDRESS,
-        entrypoint: "withdraw",
-        calldata: [
-          parseInt(resource.entity_id, 10), // from_structure_id (u32)
-          walletAddress, // to_address
-          resource.resource_contract_address, // token
-          resource.amount, // amount (u128)
-          CLIENT_FEE_RECIPIENT, // client_fee_recipient
-        ],
-      }))
+    ? filteredResources.map((resource) => {
+        // Reduce amount by 10 to avoid tiny balance discrepancies
+        const originalAmount = BigInt(resource.amount)
+        const reducedAmount = originalAmount > 10n ? originalAmount - 10n : 0n
+        
+        // Skip resources that would have 0 or negative amount after reduction
+        if (reducedAmount === 0n) {
+          console.log(`Skipping ${resource.resource_name} from entity ${resource.entity_id} - amount too small after reduction`)
+          return null
+        }
+        
+        return {
+          contractAddress: BRIDGE_CONTRACT_ADDRESS,
+          entrypoint: "withdraw",
+          calldata: [
+            parseInt(resource.entity_id, 10), // from_structure_id (u32)
+            walletAddress, // to_address
+            resource.resource_contract_address, // token
+            reducedAmount.toString(), // amount (u128) - reduced by 10
+            CLIENT_FEE_RECIPIENT, // client_fee_recipient
+          ],
+        }
+      }).filter(call => call !== null) as Call[]
     : []
 
   const createProgressReporter = (): ProgressReporter => ({
@@ -165,52 +177,103 @@ export function BridgeOut() {
       console.log(`Processing withdrawal ${i + 1}/${calls.length}: ${resourceName}`)
 
       try {
-        // First, try to estimate the fee to check if the transaction will succeed
-        // This helps us catch failures before the wallet popup
+        // First try to estimate fee - this will fail with insufficient balance but won't show popup
         try {
           await account.estimateInvokeFee([call])
-        } catch {
-          // If fee estimation fails, the transaction will fail
-          // Skip this one silently without showing wallet popup
-          failCount++
-          setFailedWithdrawals(prev => [...prev, resourceName])
-          console.log(`⏭️ Skipping ${resourceName} - simulation failed (likely insufficient balance)`)
-          continue
-        }
-
-        // If estimation succeeded, execute the transaction
-        const result = await account.execute([call])
-        allTxHashes.push(result.transaction_hash)
-        successCount++
-        
-        setSuccessfulWithdrawals(prev => [...prev, resourceName])
-        console.log(`✅ Success: ${resourceName}`)
-        
-        // Small delay between transactions to avoid rate limiting
-        if (i < calls.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200))
-        }
-      } catch (error: unknown) {
-        failCount++
-        setFailedWithdrawals(prev => [...prev, resourceName])
-        
-        console.error(`❌ Failed: ${resourceName}`, error)
-        
-        // Extract error message for logging
-        let errorText = ''
-        if (typeof error === 'string') {
-          errorText = error
-        } else if (error && typeof error === 'object') {
-          if ('message' in error && typeof error.message === 'string') {
-            errorText = error.message
-          } else if ('toString' in error && typeof error.toString === 'function') {
-            errorText = error.toString()
+          // If estimation succeeds, execute the transaction
+          const result = await account.execute([call])
+          allTxHashes.push(result.transaction_hash)
+          successCount++
+          
+          setSuccessfulWithdrawals(prev => [...prev, resourceName])
+          console.log(`✅ Success: ${resourceName}`)
+          
+          // Small delay between transactions to avoid rate limiting
+          if (i < calls.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200))
+          }
+        } catch (estimateError: unknown) {
+          // Parse the estimation error for insufficient balance info
+          let errorText = ''
+          
+          if (typeof estimateError === 'string') {
+            errorText = estimateError
+          } else if (estimateError && typeof estimateError === 'object') {
+            if ('message' in estimateError) {
+              errorText = String(estimateError.message)
+            } else {
+              errorText = JSON.stringify(estimateError)
+            }
+          }
+          
+          console.log(`Estimation error: ${errorText}`)
+          
+          // Check if it's an insufficient balance error and extract the actual balance
+          const insufficientMatch = errorText.match(/Insufficient Balance:\s*(\w+)\s*\(id:\s*\d+,\s*balance:\s*(\d+)\)\s*<\s*(\d+)/i)
+          
+          if (insufficientMatch && insufficientMatch[2]) {
+            const resourceNameFromError = insufficientMatch[1]
+            const actualBalance = insufficientMatch[2]
+            const attemptedAmount = insufficientMatch[3]
+            
+            console.log(`💡 Found actual balance from estimation error: ${resourceNameFromError} has ${actualBalance}, tried to withdraw ${attemptedAmount}`)
+            
+            // Only retry if actual balance is greater than 10 (our reduction amount)
+            if (actualBalance !== '0' && actualBalance !== '10' && parseInt(actualBalance) > 10) {
+              console.log(`🔄 Retrying with actual balance: ${actualBalance}`)
+              
+              // Create a new call with the actual balance
+              const retryCall: Call = {
+                contractAddress: BRIDGE_CONTRACT_ADDRESS,
+                entrypoint: "withdraw",
+                calldata: [
+                  parseInt(resource.entity_id, 10),
+                  walletAddress,
+                  resource.resource_contract_address,
+                  actualBalance, // Use the actual balance from the error
+                  CLIENT_FEE_RECIPIENT,
+                ],
+              }
+              
+              try {
+                // Try again with the correct balance
+                const retryResult = await account.execute([retryCall])
+                allTxHashes.push(retryResult.transaction_hash)
+                successCount++
+                
+                setSuccessfulWithdrawals(prev => [...prev, `${resource.resource_name} from entity ${resource.entity_id} (adjusted to ${actualBalance})`])
+                console.log(`✅ Success on retry: ${resource.resource_name} with balance ${actualBalance}`)
+                
+                // Small delay before next transaction
+                if (i < calls.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 200))
+                }
+                continue
+              } catch (retryError) {
+                console.error(`❌ Retry also failed for ${resource.resource_name}:`, retryError)
+                failCount++
+                setFailedWithdrawals(prev => [...prev, `${resource.resource_name} from entity ${resource.entity_id} (retry failed)`])
+                continue
+              }
+            } else {
+              console.log(`⏭️ Skipping - balance too low (${actualBalance})`)
+              failCount++
+              setFailedWithdrawals(prev => [...prev, `${resource.resource_name} from entity ${resource.entity_id} (balance: ${actualBalance})`])
+              continue
+            }
+          } else {
+            // Not an insufficient balance error, just a regular failure
+            console.log(`⏭️ Skipping - estimation failed for other reasons`)
+            failCount++
+            setFailedWithdrawals(prev => [...prev, `${resource.resource_name} from entity ${resource.entity_id} (estimation failed)`])
+            continue
           }
         }
-        
-        console.log(`Error details: ${errorText}`)
-        
-        // Continue with next resource regardless of failure
+      } catch (error: unknown) {
+        // This should rarely happen now since we're catching estimation errors above
+        console.log('Unexpected error:', error)
+        failCount++
+        setFailedWithdrawals(prev => [...prev, `${resource.resource_name} from entity ${resource.entity_id} (unexpected error)`])
         continue
       }
     }
